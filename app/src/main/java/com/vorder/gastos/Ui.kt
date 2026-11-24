@@ -7,43 +7,42 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -71,21 +70,17 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle as JTextStyle
 import java.util.Locale
 
-private val ROJO = Color(0xFFC62828)
-private val VERDE = Color(0xFF2E7D32)
 private val ARG = Locale("es", "AR")
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = Color(0xFF1B6B50),
+            primary = GBlue,
             onPrimary = Color.White,
-            primaryContainer = Color(0xFFB7F0D5),
-            onPrimaryContainer = Color(0xFF002114),
-            secondaryContainer = Color(0xFFCDE9DB),
-            surface = Color(0xFFFBFDF9),
-            background = Color(0xFFFBFDF9)
+            surface = NeoBg,
+            background = NeoBg,
+            onSurface = InkDark
         ),
         content = content
     )
@@ -115,6 +110,20 @@ private fun fmtInput(d: Double): String =
     if (d == Math.floor(d)) d.toLong().toString() else String.format(Locale.US, "%.2f", d)
 
 private fun csv(s: String): String = "\"" + s.replace("\"", "\"\"") + "\""
+
+private fun kindFor(t: Tipo): IconKind = when (t) {
+    Tipo.PAGO -> IconKind.CARD
+    Tipo.TRANSFERENCIA -> IconKind.SWAP
+    Tipo.GASTO -> IconKind.BAG
+    Tipo.INGRESO -> IconKind.INCOME
+}
+
+private fun colorFor(t: Tipo): Color = when (t) {
+    Tipo.PAGO -> GBlue
+    Tipo.TRANSFERENCIA -> GPurple
+    Tipo.GASTO -> GYellow
+    Tipo.INGRESO -> GGreen
+}
 
 fun exportCsv(ctx: Context, list: List<Mov>) {
     val sb = StringBuilder("fecha,tipo,billetera,comercio,categoria,monto,nota\n")
@@ -157,47 +166,43 @@ fun App() {
         all.filter { it.fecha >= s && it.fecha < e }
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = tab == 0, onClick = { tab = 0 },
-                    icon = { Text("📋") }, label = { Text("Registro") }
-                )
-                NavigationBarItem(
-                    selected = tab == 1, onClick = { tab = 1 },
-                    icon = { Text("👛") }, label = { Text("Consumos") }
-                )
-                NavigationBarItem(
-                    selected = tab == 2, onClick = { tab = 2 },
-                    icon = { Text("⚙️") }, label = { Text("Ajustes") }
-                )
+    CompositionLocalProvider(LocalContentColor provides InkDark) {
+        Box(Modifier.fillMaxSize()) {
+            NeoBackground()
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                Header(tab)
+                if (tab != 2) {
+                    MonthBar(
+                        ym = ym,
+                        canNext = offset < 0,
+                        onPrev = { offset -= 1 },
+                        onNext = { if (offset < 0) offset += 1 }
+                    )
+                }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    Crossfade(targetState = tab, animationSpec = tween(250), label = "tab") { t ->
+                        when (t) {
+                            0 -> RegistroScreen(month) { editing = it }
+                            1 -> ConsumosScreen(month) { editing = it }
+                            else -> AjustesScreen(all)
+                        }
+                    }
+                }
             }
-        },
-        floatingActionButton = {
             if (tab == 0) {
-                FloatingActionButton(onClick = { showNew = true }) {
-                    Text("+", fontSize = 28.sp)
-                }
+                FabAdd(
+                    active = showNew,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(end = 26.dp, bottom = 112.dp)
+                ) { showNew = true }
             }
-        }
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            if (tab != 2) {
-                MonthBar(
-                    ym = ym,
-                    canNext = offset < 0,
-                    onPrev = { offset -= 1 },
-                    onNext = { if (offset < 0) offset += 1 }
-                )
-            }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when (tab) {
-                    0 -> RegistroScreen(month) { editing = it }
-                    1 -> ConsumosScreen(month) { editing = it }
-                    else -> AjustesScreen(all)
-                }
-            }
+            NeoNav(
+                tab = tab,
+                onTab = { tab = it },
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+            )
         }
     }
 
@@ -223,53 +228,102 @@ fun App() {
 }
 
 @Composable
+fun Header(tab: Int) {
+    val titles = listOf("Registro", "Consumos", "Ajustes")
+    Row(
+        Modifier.fillMaxWidth().padding(start = 26.dp, end = 26.dp, top = 12.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Gastos VORDER", fontSize = 13.sp, color = InkSoft, fontWeight = FontWeight.Medium)
+            Text(titles[tab], fontSize = 30.sp, fontWeight = FontWeight.Bold, color = InkDark)
+        }
+        Box(Modifier.size(50.dp).neuRaised(25.dp, 5.dp), contentAlignment = Alignment.Center) {
+            AnimIcon(IconKind.SPARK, GYellow, Modifier.size(26.dp), loop = true)
+        }
+    }
+}
+
+@Composable
 fun MonthBar(ym: YearMonth, canNext: Boolean, onPrev: () -> Unit, onNext: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 26.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        TextButton(onClick = onPrev) { Text("‹ Anterior") }
-        Text(monthLabel(ym), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        TextButton(onClick = onNext, enabled = canNext) { Text("Siguiente ›") }
+        NeoRoundButton(IconKind.LEFT, onPrev)
+        Text(monthLabel(ym), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        NeoRoundButton(IconKind.RIGHT, onNext, enabled = canNext)
     }
 }
 
 // ---------- Registro ----------
 
 @Composable
-fun Stat(label: String, value: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
-        Text(value, color = color, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+fun StatBlock(icon: IconKind, label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).neuInset(20.dp, 3.dp), contentAlignment = Alignment.Center) {
+            AnimIcon(icon, color, Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(label, fontSize = 12.sp, color = InkSoft)
+            Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
+        }
     }
 }
 
 @Composable
-fun MovRow(m: Mov, onClick: () -> Unit) {
+fun SummaryCard(gastos: Double, ingresos: Double) {
+    val balance = ingresos - gastos
+    val total = gastos + ingresos
+    NeoCard(Modifier.fillMaxWidth(), glass = true, corner = 28.dp) {
+        Column(Modifier.padding(20.dp)) {
+            Text("Balance del mes", fontSize = 13.sp, color = InkSoft)
+            Text(
+                animatedMoney(balance), fontSize = 32.sp, fontWeight = FontWeight.Bold,
+                color = if (balance >= 0) GGreen else GRed, maxLines = 1
+            )
+            Spacer(Modifier.height(12.dp))
+            AnimBar(if (total > 0) (gastos / total).toFloat() else 0f, GRed)
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StatBlock(IconKind.CARD, "Gastos", animatedMoney(gastos), GRed, Modifier.weight(1f))
+                StatBlock(IconKind.INCOME, "Ingresos", animatedMoney(ingresos), GGreen, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun MovCard(m: Mov, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier
+            .fillMaxWidth()
+            .glass(20.dp, 0.5f)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(m.tipo.emoji, fontSize = 24.sp)
+        Box(Modifier.size(46.dp).neuRaised(23.dp, 3.dp), contentAlignment = Alignment.Center) {
+            AnimIcon(kindFor(m.tipo), colorFor(m.tipo), Modifier.size(23.dp))
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 titulo(m), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.SemiBold, fontSize = 15.sp
             )
             Text(
                 m.billetera + " · " + m.categoria + " · " + fmtFecha(m.fecha),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+                fontSize = 12.sp, color = InkSoft, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
         }
         Spacer(Modifier.width(8.dp))
         Text(
             (if (m.tipo.egreso) "-" else "+") + money(m.monto),
-            color = if (m.tipo.egreso) ROJO else VERDE,
-            fontWeight = FontWeight.Bold
+            color = if (m.tipo.egreso) GRed else GGreen,
+            fontWeight = FontWeight.Bold, fontSize = 15.sp
         )
     }
 }
@@ -283,55 +337,43 @@ fun RegistroScreen(list: List<Mov>, onEdit: (Mov) -> Unit) {
     val gastos = list.filter { it.tipo.egreso }.sumOf { it.monto }
     val ingresos = list.filter { !it.tipo.egreso }.sumOf { it.monto }
 
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            Card(
-                Modifier.fillMaxWidth().padding(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Stat("Gastos", money(gastos), ROJO)
-                    Stat("Ingresos", money(ingresos), VERDE)
-                    Stat("Balance", money(ingresos - gastos), if (ingresos - gastos >= 0) VERDE else ROJO)
-                }
-            }
-        }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 170.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { SummaryCard(gastos, ingresos) }
         item {
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 6.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                FilterChip(
-                    selected = filtro == "TODOS", onClick = { filtro = "TODOS" },
-                    label = { Text("Todos") }
-                )
+                NeoChip("Todos", filtro == "TODOS", { filtro = "TODOS" })
                 for (t in Tipo.values()) {
-                    FilterChip(
-                        selected = filtro == t.name, onClick = { filtro = t.name },
-                        label = { Text(t.emoji + " " + t.label) }
-                    )
+                    NeoChip(t.label, filtro == t.name, { filtro = t.name }, colorFor(t))
                 }
             }
-            Spacer(Modifier.height(8.dp))
         }
         if (shown.isEmpty()) {
             item {
-                Text(
-                    "No hay movimientos en este período.\n\nCuando llegue una notificación de tus billeteras o bancos se carga sola (activá el acceso en Ajustes), o tocá + para cargar uno a mano.",
-                    modifier = Modifier.padding(24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                NeoCard(Modifier.fillMaxWidth(), glass = true) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        AnimIcon(IconKind.SPARK, GBlue, Modifier.size(40.dp), loop = true)
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "No hay movimientos en este período.\n\nCuando llegue una notificación de tus billeteras o bancos se carga sola (activá el acceso en Ajustes), o tocá + para cargar uno a mano.",
+                            color = InkSoft, fontSize = 14.sp
+                        )
+                    }
+                }
             }
         } else {
-            items(shown, key = { it.id }) { m ->
-                MovRow(m) { onEdit(m) }
-                HorizontalDivider()
-            }
+            items(shown, key = { it.id }) { m -> MovCard(m) { onEdit(m) } }
         }
-        item { Spacer(Modifier.height(88.dp)) }
     }
 }
 
@@ -361,18 +403,22 @@ fun ConsumosScreen(list: List<Mov>, onEdit: (Mov) -> Unit) {
     val total = stats.sumOf { it.egresos }
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 130.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         item {
-            Card(
-                Modifier.fillMaxWidth().padding(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Total consumido en el mes", style = MaterialTheme.typography.labelMedium)
-                    Text(money(total), fontWeight = FontWeight.Bold, fontSize = 26.sp, color = ROJO)
+            NeoCard(Modifier.fillMaxWidth(), glass = true, corner = 28.dp) {
+                Column(Modifier.padding(20.dp)) {
+                    Text("Total consumido en el mes", fontSize = 13.sp, color = InkSoft)
+                    Text(
+                        animatedMoney(total), fontSize = 32.sp,
+                        fontWeight = FontWeight.Bold, color = GRed, maxLines = 1
+                    )
                     Text(
                         stats.size.toString() + " billeteras / medios de pago",
-                        style = MaterialTheme.typography.bodySmall
+                        fontSize = 12.sp, color = InkSoft
                     )
                 }
             }
@@ -381,69 +427,69 @@ fun ConsumosScreen(list: List<Mov>, onEdit: (Mov) -> Unit) {
             item {
                 Text(
                     "Todavía no hay consumos en este período.",
-                    modifier = Modifier.padding(24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    modifier = Modifier.padding(16.dp), color = InkSoft
                 )
             }
         }
         items(stats, key = { it.name }) { w ->
+            val col = PALETTE[stats.indexOf(w).coerceAtLeast(0) % PALETTE.size]
             val open = expanded[w.name] == true
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Column {
-                    Row(
-                        Modifier.fillMaxWidth().clickable { expanded[w.name] = !open }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("👛 " + w.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                            Text(
-                                w.movs.size.toString() + " movimientos",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("-" + money(w.egresos), color = ROJO, fontWeight = FontWeight.Bold)
-                            if (w.ingresos > 0) {
-                                Text("+" + money(w.ingresos), color = VERDE, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (open) "▲" else "▼")
+            val share = if (total > 0) (w.egresos / total).toFloat().coerceIn(0f, 1f) else 0f
+            NeoCard(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().tap { expanded[w.name] = !open }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(50.dp).neuInset(25.dp, 4.dp), contentAlignment = Alignment.Center) {
+                        AnimIcon(IconKind.WALLET, col, Modifier.size(26.dp), active = open)
                     }
-                    val share = if (total > 0) (w.egresos / total).toFloat().coerceIn(0f, 1f) else 0f
-                    LinearProgressIndicator(
-                        progress = { share },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                    )
-                    Text(
-                        "%.0f%% del total".format(share * 100),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 10.dp)
-                    )
-                    if (open) {
-                        WalletDetail(w, onEdit)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            w.name, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        Text(w.movs.size.toString() + " movimientos", fontSize = 12.sp, color = InkSoft)
                     }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("-" + money(w.egresos), color = GRed, fontWeight = FontWeight.Bold)
+                        if (w.ingresos > 0) {
+                            Text("+" + money(w.ingresos), color = GGreen, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    AnimIcon(IconKind.EXPAND, InkSoft, Modifier.size(22.dp), active = open)
+                }
+                AnimBar(share, col, Modifier.padding(horizontal = 16.dp))
+                Text(
+                    "%.0f%% del total".format(share * 100),
+                    fontSize = 11.sp, color = InkSoft,
+                    modifier = Modifier.padding(start = 18.dp, top = 6.dp, bottom = 14.dp)
+                )
+                AnimatedVisibility(
+                    visible = open,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    WalletDetail(w, onEdit)
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
 @Composable
 private fun WalletDetail(w: WalletStat, onEdit: (Mov) -> Unit) {
     val egr = w.movs.filter { it.tipo.egreso }
-    Column(Modifier.padding(bottom = 8.dp)) {
-        HorizontalDivider()
+    Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
         val porTipo = Tipo.values().filter { it.egreso }.map { t ->
             t to egr.filter { it.tipo == t }.sumOf { it.monto }
         }.filter { it.second > 0 }
         if (porTipo.isNotEmpty()) {
             Text(
                 porTipo.joinToString("  ·  ") { it.first.label + "s: " + money(it.second) },
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                fontSize = 12.sp, color = InkSoft,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
             )
         }
         val porCat = egr.groupBy { it.categoria }
@@ -452,28 +498,28 @@ private fun WalletDetail(w: WalletStat, onEdit: (Mov) -> Unit) {
         if (porCat.isNotEmpty()) {
             Text(
                 "Por categoría", fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 4.dp)
             )
-            for ((c, v) in porCat) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            porCat.forEachIndexed { i, (c, v) ->
+                Column(Modifier.padding(horizontal = 4.dp, vertical = 5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(c)
-                        Text(money(v))
+                        Text(c, fontSize = 14.sp)
+                        Text(money(v), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    LinearProgressIndicator(
-                        progress = { if (w.egresos > 0) (v / w.egresos).toFloat().coerceIn(0f, 1f) else 0f },
-                        modifier = Modifier.fillMaxWidth()
+                    Spacer(Modifier.height(4.dp))
+                    AnimBar(
+                        if (w.egresos > 0) (v / w.egresos).toFloat() else 0f,
+                        PALETTE[i % PALETTE.size]
                     )
                 }
             }
         }
         Text(
             "Detalle", fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp)
+            modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 8.dp)
         )
-        for (m in w.movs) {
-            MovRow(m) { onEdit(m) }
-            HorizontalDivider()
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (m in w.movs) MovCard(m) { onEdit(m) }
         }
     }
 }
@@ -495,112 +541,118 @@ fun AjustesScreen(all: List<Mov>) {
     }
     var selected by remember { mutableStateOf(Prefs.monitored(ctx)) }
 
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 130.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
-            Spacer(Modifier.height(12.dp))
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer
-                    else Color(0xFFFFE0B2)
-                )
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        if (enabled) "✅ Lectura de notificaciones activada"
-                        else "⚠️ Lectura de notificaciones desactivada",
-                        fontWeight = FontWeight.Bold
-                    )
+            NeoCard(Modifier.fillMaxWidth(), glass = true, corner = 28.dp) {
+                Column(Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PulseDot(if (enabled) GGreen else GYellow, active = enabled)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (enabled) "Lectura de notificaciones activada"
+                            else "Lectura de notificaciones desactivada",
+                            fontWeight = FontWeight.Bold, fontSize = 15.sp
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Para cargar los gastos solos, la app necesita acceso a las notificaciones. " +
-                            "Los datos quedan solo en tu teléfono.",
-                        style = MaterialTheme.typography.bodySmall
+                        "Para cargar los gastos solos, la app necesita acceso a las notificaciones. Los datos quedan solo en tu teléfono.",
+                        fontSize = 13.sp, color = InkSoft
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = {
+                    Spacer(Modifier.height(14.dp))
+                    NeoButton("Abrir acceso a notificaciones", IconKind.GEAR, {
                         ctx.startActivity(
                             Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
-                    }) { Text("Abrir acceso a notificaciones") }
-                    Spacer(Modifier.height(4.dp))
+                    })
+                    Spacer(Modifier.height(12.dp))
                     Text(
-                        "Si Android no te deja activarlo (app instalada desde un APK): entrá a Info de la app → menú ⋮ → «Permitir ajustes restringidos» y volvé a intentar.",
-                        style = MaterialTheme.typography.bodySmall
+                        "Si Android no te deja activarlo (app instalada desde un APK): Info de la app → menú ⋮ → «Permitir ajustes restringidos» y volvé a intentar.",
+                        fontSize = 12.sp, color = InkSoft
                     )
-                    OutlinedButton(onClick = {
+                    Spacer(Modifier.height(10.dp))
+                    NeoButton("Abrir info de la app", IconKind.LIST, {
                         val i = Intent(
                             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                             Uri.parse("package:" + ctx.packageName)
                         )
                         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         ctx.startActivity(i)
-                    }) { Text("Abrir info de la app") }
+                    }, color = GPurple)
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                NeoButton("Exportar CSV", IconKind.EXPORT, {
                     try {
                         exportCsv(ctx, all)
                     } catch (e: Exception) {
                         Toast.makeText(ctx, "No se pudo exportar", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("📤 Exportar CSV") }
-                OutlinedButton(onClick = {
+                }, color = GGreen)
+                NeoButton("Probar lector", IconKind.SPARK, {
                     val sample = "Pagaste \$1.500 a Kiosco Don Pepe"
                     val r = Parser.parse(sample)
                     if (r != null) {
                         Db.insert(
-                            Mov(0, System.currentTimeMillis(), r.monto, r.tipo, "Prueba",
-                                r.comercio, r.categoria, "", "auto", sample)
+                            Mov(
+                                0, System.currentTimeMillis(), r.monto, r.tipo, "Prueba",
+                                r.comercio, r.categoria, "", "auto", sample
+                            )
                         )
                         Toast.makeText(ctx, "Movimiento de prueba cargado", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("🧪 Probar lector") }
+                }, color = GYellow)
             }
-            Spacer(Modifier.height(16.dp))
-            Text("Apps que se leen", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            Text(
-                "Activá las billeteras y bancos que usás. Las que parecen financieras aparecen primero.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            TextButton(onClick = {
-                val s = HashSet(selected)
-                s.addAll(Prefs.detect(ctx))
-                selected = s
-                Prefs.setMonitored(ctx, s)
-            }) { Text("Detectar billeteras y bancos de nuevo") }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 6.dp)) {
+                Text("Apps que se leen", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    "Activá las billeteras y bancos que usás. Las que parecen financieras aparecen primero.",
+                    fontSize = 12.sp, color = InkSoft
+                )
+                Spacer(Modifier.height(10.dp))
+                NeoButton("Detectar de nuevo", IconKind.SPARK, {
+                    val s = HashSet(selected)
+                    s.addAll(Prefs.detect(ctx))
+                    selected = s
+                    Prefs.setMonitored(ctx, s)
+                })
+            }
         }
         items(apps, key = { it.second }) { app ->
             val label = app.first
             val pkg = app.second
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().glass(18.dp, 0.45f).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                     Text(
-                        pkg, style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        pkg, fontSize = 10.sp, color = InkSoft,
                         maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
-                Switch(
-                    checked = pkg in selected,
-                    onCheckedChange = { on ->
-                        val s = HashSet(selected)
-                        if (on) s.add(pkg) else s.remove(pkg)
-                        selected = s
-                        Prefs.setMonitored(ctx, s)
-                    }
-                )
+                Spacer(Modifier.width(10.dp))
+                NeoSwitch(pkg in selected) { on ->
+                    val s = HashSet(selected)
+                    if (on) s.add(pkg) else s.remove(pkg)
+                    selected = s
+                    Prefs.setMonitored(ctx, s)
+                }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
@@ -624,71 +676,53 @@ fun MovDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Nuevo movimiento" else "Editar movimiento") },
+        containerColor = Color(0xFFEEF2F8),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
+        title = {
+            Text(
+                if (initial == null) "Nuevo movimiento" else "Editar movimiento",
+                fontWeight = FontWeight.Bold, color = InkDark
+            )
+        },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
-                    value = monto, onValueChange = { monto = it },
-                    label = { Text("Monto") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).padding(6.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                NeoField(monto, { monto = it }, "Monto", keyboard = KeyboardType.Decimal)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp, horizontal = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     for (t in Tipo.values()) {
-                        FilterChip(
-                            selected = tipo == t, onClick = { tipo = t },
-                            label = { Text(t.emoji + " " + t.label) }
-                        )
+                        NeoChip(t.label, tipo == t, { tipo = t }, colorFor(t))
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = billetera, onValueChange = { billetera = it },
-                    label = { Text("Billetera / banco") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (w in quick) {
-                        FilterChip(
-                            selected = billetera == w, onClick = { billetera = w },
-                            label = { Text(w) }
-                        )
-                    }
+                NeoField(billetera, { billetera = it }, "Billetera / banco")
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp, horizontal = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    for (w in quick) NeoChip(w, billetera == w, { billetera = w })
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = comercio, onValueChange = { comercio = it },
-                    label = { Text("Comercio / destinatario") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (c in CATEGORIAS) {
-                        FilterChip(
-                            selected = categoria == c, onClick = { categoria = c },
-                            label = { Text(c) }
-                        )
-                    }
+                NeoField(comercio, { comercio = it }, "Comercio / destinatario")
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp, horizontal = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    for (c in CATEGORIAS) NeoChip(c, categoria == c, { categoria = c }, GGreen)
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = nota, onValueChange = { nota = it },
-                    label = { Text("Nota") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                NeoField(nota, { nota = it }, "Nota")
                 if (initial != null && initial.raw.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         "Notificación original: " + initial.raw,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 12.sp, color = InkSoft
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            NeoButton("Guardar", IconKind.SPARK, {
                 val v = monto.replace(',', '.').toDoubleOrNull()
                 if (v != null && v > 0) {
                     onSave(
@@ -701,14 +735,14 @@ fun MovDialog(
                         )
                     )
                 }
-            }) { Text("Guardar") }
+            }, modifier = Modifier.padding(4.dp))
         },
         dismissButton = {
             Row {
                 if (onDelete != null) {
-                    TextButton(onClick = onDelete) { Text("Eliminar", color = ROJO) }
+                    TextButton(onClick = onDelete) { Text("Eliminar", color = GRed) }
                 }
-                TextButton(onClick = onDismiss) { Text("Cancelar") }
+                TextButton(onClick = onDismiss) { Text("Cancelar", color = InkSoft) }
             }
         }
     )
